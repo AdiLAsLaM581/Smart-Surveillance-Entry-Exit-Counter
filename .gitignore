@@ -1,0 +1,13 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Video files
+*.mp4
+*.avi
+*.mov
+
+# Model weights
+*.pt
