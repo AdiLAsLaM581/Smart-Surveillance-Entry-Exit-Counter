@@ -1,0 +1,5 @@
+Version,Model,Confidence,Image Size,Automatic Entry,Manual Entry,Automatic Exit,Manual Exit,Count Error (%),FPS
+Baseline,yolov8n.pt,Default,Default,2,3,1,5,62.5,4.36
+Confidence_0.4,yolov8n.pt,0.4,Default,3,3,1,5,50.0,4.76
+Image_Size_960,yolov8n.pt,Default,960,3,3,2,5,37.5,2.43
+YOLO11s_Model,yolo11s.pt,Default,Default,2,3,1,5,62.5,1.58
