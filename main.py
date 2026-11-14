@@ -1,22 +1,60 @@
-
 import cv2
 import numpy as np
 import supervision as sv
 import csv
 import os
+import time
 from ultralytics import YOLO
 from datetime import datetime
 
 # ---------------- CONFIGURATION ----------------
 
 VIDEO_PATH = r"E:\Zee Project\EntryPoint\Surveillance_test_video_for_pede…_5cfc95bd.mp4"
+
+# Select ONE experiment and run the program.
+# Run the program four times, changing only EXPERIMENT each time:
+# Baseline, Confidence_0.4, Image_Size_960, YOLO11s_Model
+EXPERIMENT = "YOLO11s_Model"
+
+# Week 5 baseline settings
 MODEL_PATH = "yolov8n.pt"
+CONFIDENCE = None
+IMAGE_SIZE = None
+
+# Week 6 experiment settings
+if EXPERIMENT == "Baseline":
+    MODEL_PATH = "yolov8n.pt"
+    CONFIDENCE = None
+    IMAGE_SIZE = None
+
+elif EXPERIMENT == "Confidence_0.4":
+    MODEL_PATH = "yolov8n.pt"
+    CONFIDENCE = 0.4
+    IMAGE_SIZE = None
+
+elif EXPERIMENT == "Image_Size_960":
+    MODEL_PATH = "yolov8n.pt"
+    CONFIDENCE = None
+    IMAGE_SIZE = 960
+
+elif EXPERIMENT == "YOLO11s_Model":
+    MODEL_PATH = "yolo11s.pt"
+    CONFIDENCE = None
+    IMAGE_SIZE = None
+
+else:
+    raise ValueError("Invalid EXPERIMENT name.")
 
 OUTPUT_DIR = "output"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-OUTPUT_VIDEO = os.path.join(OUTPUT_DIR, "annotated_video.mp4")
-OUTPUT_CSV = os.path.join(OUTPUT_DIR, "events.csv")
+OUTPUT_VIDEO = os.path.join(
+    OUTPUT_DIR, EXPERIMENT + "_annotated_video.mp4"
+)
+OUTPUT_CSV = os.path.join(
+    OUTPUT_DIR, EXPERIMENT + "_events.csv"
+)
+COMPARISON_CSV = os.path.join(OUTPUT_DIR, "week6_comparison.csv")
 
 # ---------------- LOAD MODEL AND VIDEO ----------------
 
@@ -77,6 +115,13 @@ previous_inside = set()
 frame_number = 0
 
 print("Processing video...")
+print("Experiment:", EXPERIMENT)
+print("Model:", MODEL_PATH)
+print("Confidence:", CONFIDENCE if CONFIDENCE is not None else "Default")
+print("Image size:", IMAGE_SIZE if IMAGE_SIZE is not None else "Default")
+
+# Start measuring processing speed.
+start_time = time.perf_counter()
 
 # ---------------- MAIN PROCESSING LOOP ----------------
 
@@ -85,13 +130,22 @@ while ret:
     frame_number += 1
 
     # Detect people and maintain their tracking IDs.
-    result = model.track(
-        frame,
-        persist=True,
-        classes=[0],
-        tracker="bytetrack.yaml",
-        verbose=False
-    )[0]
+    # Week 5 tracking settings are preserved.
+    track_settings = {
+        "persist": True,
+        "classes": [0],
+        "tracker": "bytetrack.yaml",
+        "verbose": False
+    }
+
+    # Apply only the setting being tested in this experiment.
+    if CONFIDENCE is not None:
+        track_settings["conf"] = CONFIDENCE
+
+    if IMAGE_SIZE is not None:
+        track_settings["imgsz"] = IMAGE_SIZE
+
+    result = model.track(frame, **track_settings)[0]
 
     detections = sv.Detections.from_ultralytics(result)
 
@@ -201,9 +255,15 @@ while ret:
         (20, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2
     )
 
+    # Display the experiment name.
+    cv2.putText(
+        frame, f"EXPERIMENT: {EXPERIMENT}",
+        (20, 160), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2
+    )
+
     # Save and display processed frame.
     out.write(frame)
-    cv2.imshow("Week 5 - From Tracks to Events", frame)
+    cv2.imshow("Week 6 - " + EXPERIMENT, frame)
 
     if cv2.waitKey(1) & 0xFF == ord("q"):
         break
@@ -211,6 +271,8 @@ while ret:
     ret, frame = cap.read()
 
 # ---------------- SAVE RESULTS ----------------
+
+elapsed_time = time.perf_counter() - start_time
 
 cap.release()
 out.release()
@@ -237,6 +299,13 @@ print("Exits:", automatic_exit)
 print("Restricted zone alerts:",
       sum(e[2] == "RESTRICTED_ZONE_ENTRY" for e in events))
 
+# Calculate processing FPS.
+processing_fps = frame_number / elapsed_time if elapsed_time > 0 else 0
+
+print("Frames processed:", frame_number)
+print("Processing time:", round(elapsed_time, 2), "seconds")
+print("Processing FPS:", round(processing_fps, 2))
+
 try:
     manual_entry = int(input("\nEnter manual entry count: "))
     manual_exit = int(input("Enter manual exit count: "))
@@ -250,41 +319,84 @@ try:
     else:
         print("Differences may be caused by ID switches, groups crossing together, missed detections or incorrect line placement.")
 
-except ValueError:
-    print("Invalid manual count.")
+    # Week 6 count error: compare total crossings with manual total.
+    manual_total = manual_entry + manual_exit
+    automatic_total = automatic_entry + automatic_exit
 
-# Save automatic and manual counts in a CSV file.
-with open(
-    os.path.join(OUTPUT_DIR, "count_comparison.csv"),
-    "w",
-    newline="",
-    encoding="utf-8"
-) as file:
+    if manual_total > 0:
+        count_error = (
+            abs(automatic_total - manual_total) / manual_total
+        ) * 100
+    else:
+        count_error = 0
 
-    writer = csv.writer(file)
+    print("Count error:", round(count_error, 2), "%")
 
-    writer.writerow([
-        "Event",
-        "Automatic Count",
-        "Manual Count",
-        "Difference"
-    ])
+    # Save automatic and manual counts in the original comparison CSV.
+    with open(
+        os.path.join(OUTPUT_DIR, EXPERIMENT + "_count_comparison.csv"),
+        "w",
+        newline="",
+        encoding="utf-8"
+    ) as file:
 
-    writer.writerow([
-        "Entries",
+        writer = csv.writer(file)
+
+        writer.writerow([
+            "Event",
+            "Automatic Count",
+            "Manual Count",
+            "Difference"
+        ])
+
+        writer.writerow([
+            "Entries",
+            automatic_entry,
+            manual_entry,
+            abs(automatic_entry - manual_entry)
+        ])
+
+        writer.writerow([
+            "Exits",
+            automatic_exit,
+            manual_exit,
+            abs(automatic_exit - manual_exit)
+        ])
+
+    # Add this experiment to the Week 6 before-and-after table.
+    comparison_row = [
+        EXPERIMENT,
+        MODEL_PATH,
+        CONFIDENCE if CONFIDENCE is not None else "Default",
+        IMAGE_SIZE if IMAGE_SIZE is not None else "Default",
         automatic_entry,
         manual_entry,
-        abs(automatic_entry - manual_entry)
-    ])
-
-    writer.writerow([
-        "Exits",
         automatic_exit,
         manual_exit,
-        abs(automatic_exit - manual_exit)
-    ])
+        round(count_error, 2),
+        round(processing_fps, 2)
+    ]
+
+    file_exists = os.path.isfile(COMPARISON_CSV)
+
+    with open(COMPARISON_CSV, "a", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+
+        if not file_exists:
+            writer.writerow([
+                "Version", "Model", "Confidence", "Image Size",
+                "Automatic Entry", "Manual Entry",
+                "Automatic Exit", "Manual Exit",
+                "Count Error (%)", "FPS"
+            ])
+
+        # Avoid adding the same experiment twice.
+        writer.writerow(comparison_row)
+
+except ValueError:
+    print("Invalid manual count. Comparison table was not updated.")
 
 print("\nProject completed!")
 print("Video:", OUTPUT_VIDEO)
-print("Comparison saved: output/count_comparison.csv")
 print("Events:", OUTPUT_CSV)
+print("Week 6 comparison:", COMPARISON_CSV)
